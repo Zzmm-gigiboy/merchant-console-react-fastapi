@@ -1,0 +1,23 @@
+**/node_modules/
+**/dist/
+**/.expo/
+**/.pytest_cache/
+**/__pycache__/
+**/*.pyc
+**/*.sqlite3
+**/*.db
+**/coverage/
+**/.env
+*.log
+
+# User data and local editor files
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.DS_Store
+.idea/
+.vscode/
+*.zip
