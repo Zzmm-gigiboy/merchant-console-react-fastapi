@@ -1,6 +1,7 @@
 """Merchant Console demo API: catalog, stock and discount previews."""
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,10 +12,16 @@ app = FastAPI(title='Merchant Console API')
 app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173', 'http://127.0.0.1:5173'], allow_methods=['*'], allow_headers=['*'])
 
 
+@contextmanager
 def db():
     conn = sqlite3.connect(DB_PATH, timeout=5)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
 
 
 def init_db():
