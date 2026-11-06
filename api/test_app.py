@@ -161,21 +161,25 @@ def test_metrics_and_inventory_stats(test_client):
     assert abs(restocked_stats["inventory_value"] - 943.0) < 0.01
 
 
-def test_discount_preview_calculation(test_client):
-    """Verify discount calculation endpoint handles valid prices and percentages."""
-    res = test_client.post("/api/discount-preview", json={"price": 100.0, "percent": 25.0})
+@pytest.mark.parametrize(
+    "price,percent,savings,final",
+    [
+        pytest.param(100.0, 25.0, 25.0, 75.0, id="standard-discount"),
+        pytest.param(49.99, 0.0, 0.0, 49.99, id="zero-discount"),
+        pytest.param(80.0, 100.0, 80.0, 0.0, id="full-discount"),
+        pytest.param(19.99, 15.0, 3.0, 16.99, id="rounded-savings"),
+    ],
+)
+def test_discount_preview_calculation(test_client, price, percent, savings, final):
+    """Verify the complete preview response, including savings and boundary discounts."""
+    res = test_client.post("/api/discount-preview", json={"price": price, "percent": percent})
     assert res.status_code == 200
-    assert res.json() == {"original": 100.0, "discount_percent": 25.0, "final": 75.0}
-
-    # Zero discount
-    res_zero = test_client.post("/api/discount-preview", json={"price": 49.99, "percent": 0.0})
-    assert res_zero.status_code == 200
-    assert res_zero.json()["final"] == 49.99
-
-    # 100% discount
-    res_free = test_client.post("/api/discount-preview", json={"price": 80.0, "percent": 100.0})
-    assert res_free.status_code == 200
-    assert res_free.json()["final"] == 0.0
+    assert res.json() == {
+        "original": price,
+        "discount_percent": percent,
+        "savings": savings,
+        "final": final,
+    }
 
 
 @pytest.mark.parametrize(
