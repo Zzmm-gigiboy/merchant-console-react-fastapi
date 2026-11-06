@@ -23,6 +23,10 @@ def db():
         conn.close()
 
 
+def escape_like(query: str) -> str:
+    """Escape SQL LIKE special wildcard characters %, _, and backslash."""
+    return query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
 
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -55,9 +59,19 @@ def health():
 
 
 @app.get('/api/products')
-def list_products(search: str = ''):
+def list_products(search: str = '', category: str = ''):
     with db() as conn:
-        records = conn.execute('SELECT * FROM products WHERE LOWER(name) LIKE ? ORDER BY id DESC', (f'%{search.lower()}%',)).fetchall()
+        sql = 'SELECT * FROM products WHERE 1=1'
+        params = []
+        if search:
+            escaped = escape_like(search.strip().lower())
+            sql += " AND LOWER(name) LIKE ? ESCAPE '\\'"
+            params.append(f'%{escaped}%')
+        if category:
+            sql += ' AND LOWER(category) = ?'
+            params.append(category.strip().lower())
+        sql += ' ORDER BY id DESC'
+        records = conn.execute(sql, params).fetchall()
         return [dict(r) for r in records]
 
 
@@ -70,14 +84,22 @@ def stats():
 
 @app.post('/api/products', status_code=201)
 def add_product(product: ProductCreate):
+    clean_name = product.name.strip()
+    clean_category = product.category.strip()
+    if len(clean_name) < 2:
+        raise HTTPException(status_code=422, detail='Product name must be at least 2 non-whitespace characters')
+    if len(clean_category) < 2:
+        raise HTTPException(status_code=422, detail='Category must be at least 2 non-whitespace characters')
     with db() as conn:
         cur = conn.execute('INSERT INTO products(name,category,price,stock) VALUES (?,?,?,?)',
-                           (product.name.strip(), product.category.strip(), product.price, product.stock))
-        return {'id': cur.lastrowid, **product.model_dump()}
+                           (clean_name, clean_category, product.price, product.stock))
+        return {'id': cur.lastrowid, **product.model_dump(), 'name': clean_name, 'category': clean_category}
 
 
 @app.patch('/api/products/{product_id}/stock')
 def update_stock(product_id: int, change: StockChange):
+    if product_id <= 0:
+        raise HTTPException(status_code=422, detail='Product ID must be a positive integer')
     with db() as conn:
         result = conn.execute('UPDATE products SET stock=? WHERE id=?', (change.stock, product_id))
         if not result.rowcount:
@@ -87,6 +109,8 @@ def update_stock(product_id: int, change: StockChange):
 
 @app.delete('/api/products/{product_id}', status_code=204)
 def delete_product(product_id: int):
+    if product_id <= 0:
+        raise HTTPException(status_code=422, detail='Product ID must be a positive integer')
     with db() as conn:
         result = conn.execute('DELETE FROM products WHERE id=?', (product_id,))
         if not result.rowcount:
@@ -95,7 +119,14 @@ def delete_product(product_id: int):
 
 @app.post('/api/discount-preview')
 def preview_discount(value: Discount):
-    return {'original': value.price, 'discount_percent': value.percent, 'final': round(value.price * (1 - value.percent / 100), 2)}
+    savings = round(value.price * (value.percent / 100), 2)
+    final = round(value.price - savings, 2)
+    return {
+        'original': value.price,
+        'discount_percent': value.percent,
+        'savings': savings,
+        'final': max(0.0, final)
+    }
 
 
 init_db()
